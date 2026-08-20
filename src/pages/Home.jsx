@@ -169,7 +169,7 @@ export default function Home() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Mujhe shaadi ke liye 5 helper chahiye…"
+              placeholder="Kam bataye…"
               className="bg-transparent outline-none text-sm w-full placeholder:text-ink-500"
             />
           </div>
@@ -396,10 +396,10 @@ export default function Home() {
                     <Bot size={18} /> Book a Service
                   </Button>
                   <a
-                    href="tel:+919000000000"
+                    href="tel:+919472681608"
                     className="inline-flex items-center gap-2 text-sm font-semibold text-white border border-white/50 rounded-pill px-5 py-3 hover:bg-white/10 transition-colors"
                   >
-                    <Phone size={16} /> Want to work with us? Call +91 90000 00000
+                    <Phone size={16} /> Want to work with us? Call +91 9472681608
                   </a>
                 </div>
               </div>
