@@ -26,7 +26,7 @@ export default function App() {
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
-      <Route path="*" element={<Home />} />
+      <Route path="https://myportfolio-nine-beta-60.vercel.app/" element={<Home />} />
     </Routes>
   );
 }
