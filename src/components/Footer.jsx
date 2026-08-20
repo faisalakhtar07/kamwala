@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin } from 'lucide-react';
 
 // Replace this with the developer's actual portfolio/website URL.
-const DEVELOPER_PORTFOLIO_URL = 'https://your-portfolio-url.example.com';
+const DEVELOPER_PORTFOLIO_URL = 'https://myportfolio-nine-beta-60.vercel.app/';
 
 const CUSTOMER_LINKS = [
   { label: 'Browse categories', to: '/categories' },
