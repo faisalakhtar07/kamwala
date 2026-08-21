@@ -82,7 +82,7 @@ export default function Footer() {
             <p className="font-display font-semibold text-sm text-white mb-2.5">Contact</p>
             <ul className="space-y-2 text-sm text-cloud-100/70">
               <li className="flex items-center gap-2">
-                <Phone size={13} className="shrink-0" /> +91 90000 00000
+                <Phone size={13} className="shrink-0" /> +91 9472681608
               </li>
               <li className="flex items-center gap-2">
                 <Mail size={13} className="shrink-0" /> support@kamwala.in
