@@ -22,3 +22,12 @@
     "vite": "^5.4.2"
   }
 }
+
+{
+    "rewrites": [
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
+}
