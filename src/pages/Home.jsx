@@ -310,7 +310,7 @@ export default function Home() {
         <div
           className="sticky mb-6"
           style={{
-            top: ${80 + i * 18}px,
+            top: `${80 + i * 18}px`,
             zIndex: i + 1,
           }}
         >
@@ -404,7 +404,7 @@ export default function Home() {
               <div
                 className="h-full bg-brand-500 rounded-full"
                 style={{
-                  width: ${((i + 1) / HOW_IT_WORKS.length) * 100}%,
+                  width: `${((i + 1) / HOW_IT_WORKS.length) * 100}%`,
                 }}
               />
             </div>
