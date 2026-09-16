@@ -31,25 +31,34 @@ import { getCategories, getServices } from '../api/misc';
 const HOW_IT_WORKS = [
   {
     icon: Bot,
-    title: 'Tell KamWala AI',
-    desc: 'Type your requirement in your own words — kitne log, kitne din, kya kaam.',
+    title: "Tell Us What You Need",
+    desc: "Describe the work you need and choose the service that fits your requirement.",
+    image:
+      "https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80",
   },
   {
     icon: ClipboardList,
-    title: 'We confirm the details',
-    desc: 'Location, timing, and budget get turned into a clear, trackable request.',
+    title: "Choose Your KamWala",
+    desc: "Find available workers near you and choose the one that suits your needs.",
+    image:
+      "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1200&q=80",
   },
   {
-    icon: UserCheck,
-    title: 'A worker gets arranged',
-    desc: 'KamWala lines up a suitable, trusted worker and confirms pricing with you.',
+    icon: Clock,
+    title: "Work Gets Started",
+    desc: "Your selected worker reaches your location and starts the requested work.",
+    image:
+      "https://images.unsplash.com/photo-1581094794329-c8112a89af12?auto=format&fit=crop&w=1200&q=80",
   },
   {
     icon: CheckCircle2,
-    title: 'Work gets done',
-    desc: 'Track status end to end, chat with us anytime, and rate the service after.',
+    title: "Work Completed",
+    desc: "Once the work is completed, review the service and finish your booking.",
+    image:
+      "https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=1200&q=80",
   },
 ];
+
 
 const TRUST_POINTS = [
   { icon: ShieldCheck, text: 'Managed booking — not just a phone number handed over' },
@@ -276,141 +285,128 @@ export default function Home() {
           </section>
         )}
 
-      
-       {/* How it works */}
+       {/* How KamWala Works */}
 <section
   id="how-it-works"
-  className="mt-20 md:mt-28 scroll-mt-20"
+  className="mt-24 md:mt-32 scroll-mt-20"
 >
-  {/* Section Heading */}
   <Reveal>
-    <div className="px-4">
-      <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase mb-1.5 text-center">
+    <div className="text-center px-4 mb-14 md:mb-20">
+      <p className="text-xs font-semibold tracking-[0.2em] text-brand-600 uppercase mb-2">
         Process
       </p>
 
-      <h2 className="font-display font-bold text-2xl md:text-3xl text-center mb-3">
+      <h2 className="font-display font-bold text-3xl md:text-5xl text-ink-900">
         How KamWala Works
       </h2>
 
-      <p className="text-ink-500 text-center max-w-lg mx-auto mb-12">
+      <p className="text-ink-500 max-w-xl mx-auto mt-4 text-sm md:text-base leading-relaxed">
         Four simple steps between "I need help with this" and the work
         getting done.
       </p>
     </div>
   </Reveal>
 
-  {/* Stacking Cards */}
-  <div className="relative px-4 max-w-3xl mx-auto pb-20">
+  {/* Stacked cards */}
+  <div className="relative max-w-6xl mx-auto px-4 pb-24">
     {HOW_IT_WORKS.map((step, i) => (
-      <Reveal
+      <div
         key={step.title}
-        delay={i * 100}
+        className="sticky"
+        style={{
+          top: `${85 + i * 22}px`,
+          zIndex: i + 1,
+        }}
       >
         <div
-          className="sticky mb-6"
-          style={{
-            top: `${80 + i * 18}px`,
-            zIndex: i + 1,
-          }}
+          className="
+            relative
+            mb-8
+            min-h-[430px]
+            md:min-h-[500px]
+            rounded-[28px]
+            md:rounded-[36px]
+            overflow-hidden
+            bg-white
+            border border-cloud-200
+            shadow-[0_20px_60px_rgba(0,0,0,0.10)]
+          "
         >
+          {/* Image */}
+          <div className="absolute inset-0">
+            <img
+              src={step.image}
+              alt={step.title}
+              className="w-full h-full object-cover"
+            />
+
+            {/* White gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/25 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+          </div>
+
+          {/* Step number */}
+          <div className="absolute top-6 left-6 md:top-8 md:left-8 z-10">
+            <div className="h-12 w-12 md:h-14 md:w-14 rounded-full bg-brand-500 text-white flex items-center justify-center font-display font-bold text-lg md:text-xl shadow-lg">
+              {String(i + 1).padStart(2, "0")}
+            </div>
+          </div>
+
+          {/* Large background number */}
           <div
             className="
-              relative
-              bg-white
-              border border-cloud-200
-              rounded-[24px]
-              p-6 md:p-8
-              min-h-[230px] md:min-h-[250px]
-              shadow-[0_10px_35px_rgba(0,0,0,0.06)]
-              transition-all duration-300
-              overflow-hidden
+              absolute
+              right-5
+              top-2
+              md:right-10
+              md:top-0
+              text-[110px]
+              md:text-[180px]
+              font-display
+              font-bold
+              text-white/10
+              leading-none
+              select-none
+              pointer-events-none
             "
           >
-            {/* Background Number */}
-            <span
-              className="
-                absolute
-                right-4
-                top-2
-                text-[100px]
-                md:text-[130px]
-                font-display
-                font-bold
-                text-brand-500/5
-                leading-none
-                pointer-events-none
-                select-none
-              "
-            >
-              {i + 1}
-            </span>
+            {i + 1}
+          </div>
 
-            {/* Step Number */}
-            <span
-              className="
-                absolute
-                -top-3
-                -left-2
-                h-9
-                w-9
-                rounded-full
-                bg-brand-500
-                text-white
-                text-sm
-                font-display
-                font-bold
-                flex
-                items-center
-                justify-center
-                shadow-[0_5px_15px_rgba(0,0,0,0.15)]
-                z-10
-              "
-            >
-              {i + 1}
-            </span>
-
-            {/* Icon */}
-            <div
-              className="
-                relative
-                h-14
-                w-14
-                rounded-2xl
-                bg-brand-50
-                text-brand-600
-                flex
-                items-center
-                justify-center
-                mb-6
-              "
-            >
-              <step.icon size={24} />
-            </div>
-
-            {/* Content */}
-            <div className="relative">
-              <p className="font-display font-bold text-lg md:text-xl text-base">
-                {step.title}
+          {/* Content */}
+          <div className="relative z-10 flex items-end min-h-[430px] md:min-h-[500px] p-7 md:p-12">
+            <div className="max-w-2xl text-white">
+              <p className="text-xs md:text-sm font-semibold tracking-[0.18em] uppercase text-white/75 mb-3">
+                Step {i + 1}
               </p>
 
-              <p className="text-ink-500 text-sm md:text-base mt-2 leading-relaxed max-w-xl">
+              <h3 className="font-display font-bold text-3xl md:text-5xl leading-tight">
+                {step.title}
+              </h3>
+
+              <p className="mt-4 text-sm md:text-lg text-white/85 leading-relaxed max-w-xl">
                 {step.desc}
               </p>
-            </div>
 
-            {/* Bottom Progress */}
-            <div className="absolute bottom-0 left-0 right-0 h-1 bg-brand-50">
-              <div
-                className="h-full bg-brand-500 rounded-full"
-                style={{
-                  width: `${((i + 1) / HOW_IT_WORKS.length) * 100}%`,
-                }}
-              />
+              {/* Progress */}
+              <div className="mt-7 flex items-center gap-3">
+                <div className="h-1.5 w-32 md:w-48 bg-white/25 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-brand-500 rounded-full"
+                    style={{
+                      width: `${((i + 1) / HOW_IT_WORKS.length) * 100}%`,
+                    }}
+                  />
+                </div>
+
+                <span className="text-xs text-white/70">
+                  {i + 1} / {HOW_IT_WORKS.length}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </Reveal>
+      </div>
     ))}
   </div>
 </section>
