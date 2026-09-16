@@ -276,33 +276,144 @@ export default function Home() {
           </section>
         )}
 
-        {/* How it works */}
-        <section id="how-it-works" className="mt-20 md:mt-28 scroll-mt-20">
-          <Reveal>
-            <p className="text-xs font-semibold tracking-wide text-brand-600 uppercase mb-1.5 text-center">Process</p>
-            <h2 className="font-display font-bold text-2xl md:text-3xl text-center mb-3">How KamWala Works</h2>
-            <p className="text-ink-500 text-center max-w-lg mx-auto mb-10">
-              Four simple steps between "I need help with this" and the work getting done.
-            </p>
-          </Reveal>
+      
+       {/* How it works */}
+<section
+  id="how-it-works"
+  className="mt-20 md:mt-28 scroll-mt-20"
+>
+  {/* Section Heading */}
+  <Reveal>
+    <div className="px-4">
+      <p className="text-xs font-semibold tracking-widest text-brand-600 uppercase mb-1.5 text-center">
+        Process
+      </p>
 
-          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-5">
-            {HOW_IT_WORKS.map((step, i) => (
-              <Reveal key={step.title} delay={i * 100}>
-                <div className="relative bg-white border border-cloud-200 rounded-card p-6 h-full hover:shadow-soft transition-shadow duration-300">
-                  <span className="absolute -top-3 -left-3 h-8 w-8 rounded-full bg-brand-500 text-white text-xs font-display font-bold flex items-center justify-center shadow-soft">
-                    {i + 1}
-                  </span>
-                  <span className="h-11 w-11 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center mb-4">
-                    <step.icon size={20} />
-                  </span>
-                  <p className="font-display font-semibold text-base">{step.title}</p>
-                  <p className="text-sm text-ink-500 mt-1.5 leading-relaxed">{step.desc}</p>
-                </div>
-              </Reveal>
-            ))}
+      <h2 className="font-display font-bold text-2xl md:text-3xl text-center mb-3">
+        How KamWala Works
+      </h2>
+
+      <p className="text-ink-500 text-center max-w-lg mx-auto mb-12">
+        Four simple steps between "I need help with this" and the work
+        getting done.
+      </p>
+    </div>
+  </Reveal>
+
+  {/* Stacking Cards */}
+  <div className="relative px-4 max-w-3xl mx-auto pb-20">
+    {HOW_IT_WORKS.map((step, i) => (
+      <Reveal
+        key={step.title}
+        delay={i * 100}
+      >
+        <div
+          className="sticky mb-6"
+          style={{
+            top: ${80 + i * 18}px,
+            zIndex: i + 1,
+          }}
+        >
+          <div
+            className="
+              relative
+              bg-white
+              border border-cloud-200
+              rounded-[24px]
+              p-6 md:p-8
+              min-h-[230px] md:min-h-[250px]
+              shadow-[0_10px_35px_rgba(0,0,0,0.06)]
+              transition-all duration-300
+              overflow-hidden
+            "
+          >
+            {/* Background Number */}
+            <span
+              className="
+                absolute
+                right-4
+                top-2
+                text-[100px]
+                md:text-[130px]
+                font-display
+                font-bold
+                text-brand-500/5
+                leading-none
+                pointer-events-none
+                select-none
+              "
+            >
+              {i + 1}
+            </span>
+
+            {/* Step Number */}
+            <span
+              className="
+                absolute
+                -top-3
+                -left-2
+                h-9
+                w-9
+                rounded-full
+                bg-brand-500
+                text-white
+                text-sm
+                font-display
+                font-bold
+                flex
+                items-center
+                justify-center
+                shadow-[0_5px_15px_rgba(0,0,0,0.15)]
+                z-10
+              "
+            >
+              {i + 1}
+            </span>
+
+            {/* Icon */}
+            <div
+              className="
+                relative
+                h-14
+                w-14
+                rounded-2xl
+                bg-brand-50
+                text-brand-600
+                flex
+                items-center
+                justify-center
+                mb-6
+              "
+            >
+              <step.icon size={24} />
+            </div>
+
+            {/* Content */}
+            <div className="relative">
+              <p className="font-display font-bold text-lg md:text-xl text-base">
+                {step.title}
+              </p>
+
+              <p className="text-ink-500 text-sm md:text-base mt-2 leading-relaxed max-w-xl">
+                {step.desc}
+              </p>
+            </div>
+
+            {/* Bottom Progress */}
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-brand-50">
+              <div
+                className="h-full bg-brand-500 rounded-full"
+                style={{
+                  width: ${((i + 1) / HOW_IT_WORKS.length) * 100}%,
+                }}
+              />
+            </div>
           </div>
-        </section>
+        </div>
+      </Reveal>
+    ))}
+  </div>
+</section>
 
         {/* Why choose KamWala */}
         <section id="why-kamwala" className="mt-20 md:mt-28 scroll-mt-20">
@@ -400,10 +511,10 @@ export default function Home() {
                     <Bot size={18} /> Book a Service
                   </Button>
                   <a
-                    href="tel:+919000000000"
+                    href="tel:+91 9472681608"
                     className="inline-flex items-center gap-2 text-sm font-semibold text-white border border-white/50 rounded-pill px-5 py-3 hover:bg-white/10 transition-colors"
                   >
-                    <Phone size={16} /> Want to work with us? Call +91 90000 00000
+                    <Phone size={16} /> Want to work with us? Call +91 9472681608
                   </a>
                 </div>
               </div>
