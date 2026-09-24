@@ -1,0 +1,186 @@
+diff --git a/public/sw.js b/public/sw.js
+index 97c21da..59721a7 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -23,6 +23,57 @@ self.addEventListener('activate', (event) => {
+   self.clients.claim();
+ });
+ 
++// --- Real push notifications -------------------------------------------
++// This fires even when the app/tab is fully closed - the browser wakes
++// this service worker in the background whenever the push service
++// delivers a message, which is what lets the notification show up on
++// the lock screen / notification tray with the phone otherwise idle.
++self.addEventListener('push', (event) => {
++  let data = {};
++  try {
++    data = event.data ? event.data.json() : {};
++  } catch {
++    data = { title: 'KamWala', body: event.data ? event.data.text() : '' };
++  }
++
++  const title = data.title || 'KamWala';
++  const options = {
++    body: data.body || '',
++    icon: '/icon-192.png',
++    badge: '/icon-192.png',
++    tag: data.tag || 'kamwala-notification',
++    renotify: true,
++    vibrate: [200, 100, 200],
++    data: { url: data.url || '/' },
++  };
++
++  event.waitUntil(self.registration.showNotification(title, options));
++});
++
++// Tapping the notification focuses an already-open tab (and routes it to
++// the relevant screen) or opens a new one if the app isn't open at all.
++self.addEventListener('notificationclick', (event) => {
++  event.notification.close();
++  const targetUrl = event.notification.data?.url || '/';
++
++  event.waitUntil(
++    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
++      for (const client of clientList) {
++        try {
++          const sameOrigin = new URL(client.url).origin === self.location.origin;
++          if (sameOrigin && 'focus' in client) {
++            if ('navigate' in client) client.navigate(targetUrl);
++            return client.focus();
++          }
++        } catch {
++          // ignore malformed client URLs
++        }
++      }
++      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
++    })
++  );
++});
++
+ self.addEventListener('fetch', (event) => {
+   const { request } = event;
+   if (request.url.includes('/api/')) return;
+diff --git a/src/context/AuthContext.jsx b/src/context/AuthContext.jsx
+index 992b38e..5c30b03 100644
+--- a/src/context/AuthContext.jsx
++++ b/src/context/AuthContext.jsx
+@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
+ import * as authApi from '../api/auth';
+ import { getMyProfile } from '../api/misc';
+ import { getToken, setToken, clearToken, getRole, setRole, clearRole } from '../api/client';
++import { enablePushNotifications, disablePushNotifications } from '../utils/push';
+ 
+ const AuthContext = createContext(null);
+ 
+@@ -20,6 +21,9 @@ export function AuthProvider({ children }) {
+       .then((u) => {
+         setUser(u);
+         setRoleState(u.role || getRole());
++        // Silently (re)register this device for real push notifications -
++        // e.g. after a page reload with an already-logged-in session.
++        enablePushNotifications();
+       })
+       .catch(() => {
+         clearToken();
+@@ -34,6 +38,7 @@ export function AuthProvider({ children }) {
+     setRole(data.user.role);
+     setUser(data.user);
+     setRoleState(data.user.role);
++    enablePushNotifications();
+     return data;
+   }, []);
+ 
+@@ -43,6 +48,7 @@ export function AuthProvider({ children }) {
+     setRole(data.user.role);
+     setUser(data.user);
+     setRoleState(data.user.role);
++    enablePushNotifications();
+     return data;
+   }, []);
+ 
+@@ -53,6 +59,7 @@ export function AuthProvider({ children }) {
+   }, []);
+ 
+   const logout = useCallback(() => {
++    disablePushNotifications();
+     clearToken();
+     clearRole();
+     setUser(null);
+diff --git a/src/utils/push.js b/src/utils/push.js
+new file mode 100644
+index 0000000..603f5e0
+--- /dev/null
++++ b/src/utils/push.js
+@@ -0,0 +1,72 @@
++import { api } from '../api/client';
++
++// Converts the VAPID public key (base64url, from the backend) into the
++// Uint8Array format the PushManager API expects.
++function urlBase64ToUint8Array(base64String) {
++  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
++  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
++  const rawData = window.atob(base64);
++  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
++}
++
++let cachedPublicKey = null;
++async function getVapidPublicKey() {
++  if (cachedPublicKey) return cachedPublicKey;
++  const data = await api.get('/push/vapid-public-key');
++  cachedPublicKey = data?.publicKey || null;
++  return cachedPublicKey;
++}
++
++export function isPushSupported() {
++  return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
++}
++
++export function getPushPermission() {
++  if (typeof Notification === 'undefined') return 'unsupported';
++  return Notification.permission; // 'default' | 'granted' | 'denied'
++}
++
++// Requests permission (if needed) and registers this device for real
++// push notifications - the kind that show on the lock screen / tray even
++// with the app fully closed. Safe to call repeatedly; no-ops quietly on
++// unsupported browsers or when the backend hasn't configured VAPID keys.
++export async function enablePushNotifications() {
++  try {
++    if (!isPushSupported()) return false;
++    if (Notification.permission === 'denied') return false;
++
++    const publicKey = await getVapidPublicKey();
++    if (!publicKey) return false;
++
++    const permission = await Notification.requestPermission();
++    if (permission !== 'granted') return false;
++
++    const registration = await navigator.serviceWorker.ready;
++    let subscription = await registration.pushManager.getSubscription();
++    if (!subscription) {
++      subscription = await registration.pushManager.subscribe({
++        userVisibleOnly: true,
++        applicationServerKey: urlBase64ToUint8Array(publicKey),
++      });
++    }
++
++    await api.post('/push/subscribe', { subscription: subscription.toJSON() });
++    return true;
++  } catch (err) {
++    console.warn('Push subscription failed:', err);
++    return false;
++  }
++}
++
++export async function disablePushNotifications() {
++  try {
++    if (!isPushSupported()) return;
++    const registration = await navigator.serviceWorker.ready;
++    const subscription = await registration.pushManager.getSubscription();
++    if (!subscription) return;
++    await api.post('/push/unsubscribe', { endpoint: subscription.endpoint }).catch(() => {});
++    await subscription.unsubscribe();
++  } catch (err) {
++    console.warn('Push unsubscribe failed:', err);
++  }
++}

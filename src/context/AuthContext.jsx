@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import * as authApi from '../api/auth';
 import { getMyProfile } from '../api/misc';
 import { getToken, setToken, clearToken, getRole, setRole, clearRole } from '../api/client';
+import { enablePushNotifications, disablePushNotifications } from '../utils/push';
 
 const AuthContext = createContext(null);
 
@@ -20,6 +21,9 @@ export function AuthProvider({ children }) {
       .then((u) => {
         setUser(u);
         setRoleState(u.role || getRole());
+        // Silently (re)register this device for real push notifications -
+        // e.g. after a page reload with an already-logged-in session.
+        enablePushNotifications();
       })
       .catch(() => {
         clearToken();
@@ -34,6 +38,7 @@ export function AuthProvider({ children }) {
     setRole(data.user.role);
     setUser(data.user);
     setRoleState(data.user.role);
+    enablePushNotifications();
     return data;
   }, []);
 
@@ -43,6 +48,7 @@ export function AuthProvider({ children }) {
     setRole(data.user.role);
     setUser(data.user);
     setRoleState(data.user.role);
+    enablePushNotifications();
     return data;
   }, []);
 
@@ -53,6 +59,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    disablePushNotifications();
     clearToken();
     clearRole();
     setUser(null);
