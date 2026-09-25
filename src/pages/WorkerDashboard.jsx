@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, MapPin, Users, IndianRupee, Clock, CheckCircle2, Briefcase, LogOut } from 'lucide-react';
+import { Bell, BellRing, MapPin, Users, IndianRupee, Clock, CheckCircle2, Briefcase, LogOut } from 'lucide-react';
 import AppLayout from '../components/AppLayout';
 import { CardSkeleton, EmptyState, ErrorState } from '../components/States';
 import { Button } from '../components/Form';
@@ -8,6 +8,7 @@ import { StatusPill, RequestIdTag } from '../components/StatusPill';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { playNotificationSound } from '../utils/sound';
+import { enablePushNotifications, getPushPermission, isPushSupported } from '../utils/push';
 import {
   getMyWorkerProfile, setAvailability, getAvailableWork, acceptWork, getMyBookings, updateBookingStatus,
 } from '../api/worker';
@@ -35,6 +36,13 @@ export default function WorkerDashboard() {
   const [togglingAvailability, setTogglingAvailability] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
   const [prevWorkCount, setPrevWorkCount] = useState(null);
+  const [pushPermission, setPushPermission] = useState(getPushPermission());
+
+  const handleEnableNotifications = async () => {
+    const ok = await enablePushNotifications();
+    setPushPermission(getPushPermission());
+    if (ok) push('Notifications enabled - new work will alert you even with the app closed.', 'success');
+  };
 
   const load = (isPoll) => {
     if (!isPoll) setLoading(true);
@@ -123,6 +131,16 @@ export default function WorkerDashboard() {
             {togglingAvailability ? 'Updating…' : `● ${profile?.availability}`}
           </button>
         </div>
+        {isPushSupported() && pushPermission !== 'granted' && (
+          <button
+            type="button"
+            onClick={handleEnableNotifications}
+            className="mt-3 flex items-center gap-1.5 text-xs font-medium text-brand-600 bg-brand-50 border border-brand-200 rounded-pill px-3 py-1.5 hover:bg-brand-100 transition-colors w-fit"
+          >
+            <BellRing size={14} />
+            {pushPermission === 'denied' ? 'Notifications blocked — check browser settings' : 'Enable notifications for new work'}
+          </button>
+        )}
         <div className="grid grid-cols-3 gap-3 mt-4">
           <div className="bg-cloud-50 rounded-lg p-3 text-center">
             <p className="font-display font-bold text-lg">{profile?.completedJobs ?? 0}</p>

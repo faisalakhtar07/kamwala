@@ -35,11 +35,19 @@ export async function enablePushNotifications() {
     if (!isPushSupported()) return false;
     if (Notification.permission === 'denied') return false;
 
+    // Ask for permission FIRST, before any other await. Browsers tie the
+    // permission prompt to "fresh" user-gesture activation - if an await
+    // (like the fetch below) runs first, some browsers silently suppress
+    // the prompt (or downgrade it to a quiet, easy-to-miss chip) instead
+    // of showing it. This was the actual reason admin push looked "dead".
+    let permission = Notification.permission;
+    if (permission === 'default') {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== 'granted') return false;
+
     const publicKey = await getVapidPublicKey();
     if (!publicKey) return false;
-
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return false;
 
     const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
