@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BellRing, MapPin, Users, IndianRupee, Clock, CheckCircle2, Briefcase, LogOut } from 'lucide-react';
+import { Bell, BellRing, MapPin, Users, IndianRupee, Clock, CheckCircle2, Briefcase, LogOut, ShieldCheck } from 'lucide-react';
 import AppLayout from '../components/AppLayout';
 import { CardSkeleton, EmptyState, ErrorState } from '../components/States';
 import { Button } from '../components/Form';
@@ -11,15 +11,29 @@ import { playNotificationSound } from '../utils/sound';
 import { enablePushNotifications, getPushPermission, isPushSupported } from '../utils/push';
 import {
   getMyWorkerProfile, setAvailability, getAvailableWork, acceptWork, getMyBookings, updateBookingStatus,
+  requestCompletionOtp, createCommissionOrder, verifyCommissionPayment,
 } from '../api/worker';
+
+function loadRazorpayScript() {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.body.appendChild(script);
+  });
+}
 
 const AVAILABILITY_STYLE = {
   available: 'bg-mint-50 text-mint-600 border-mint-200',
   busy: 'bg-amber-50 text-amber-600 border-amber-200',
   offline: 'bg-cloud-100 text-ink-500 border-cloud-200',
 };
-const NEXT_STATUS = { assigned: 'worker_on_the_way', worker_on_the_way: 'in_progress', in_progress: 'completed' };
-const NEXT_LABEL = { assigned: "I'm on the way", worker_on_the_way: 'Start work', in_progress: 'Mark completed' };
+// 'worker_on_the_way' and 'in_progress' are handled with dedicated OTP UI
+// below instead of a plain one-tap button - only 'assigned' -> "on the
+// way" needs no verification.
+const NEXT_STATUS = { assigned: 'worker_on_the_way' };
+const NEXT_LABEL = { assigned: "I'm on the way" };
 const TABS = [{ value: 'available', label: 'New Work' }, { value: 'active', label: 'My Bookings' }];
 
 export default function WorkerDashboard() {
@@ -37,6 +51,9 @@ export default function WorkerDashboard() {
   const [acceptingId, setAcceptingId] = useState(null);
   const [prevWorkCount, setPrevWorkCount] = useState(null);
   const [pushPermission, setPushPermission] = useState(getPushPermission());
+  const [otpInputs, setOtpInputs] = useState({}); // { [requestId]: '1234' }
+  const [submittingId, setSubmittingId] = useState(null); // requestId currently mid-action
+  const [payingId, setPayingId] = useState(null);
 
   const handleEnableNotifications = async () => {
     const ok = await enablePushNotifications();
@@ -108,6 +125,97 @@ export default function WorkerDashboard() {
       load(false);
     } catch (err) {
       push(err.message || 'Could not update status.', 'error');
+    }
+  };
+
+  // Worker has arrived and asks the customer for the start OTP - this is
+  // what actually moves the job from "on the way" to "in progress".
+  const handleVerifyStartOtp = async (booking) => {
+    const otp = (otpInputs[booking.requestId] || '').trim();
+    if (!otp) return push('Enter the OTP the customer gave you.', 'error');
+    setSubmittingId(booking.requestId);
+    try {
+      await updateBookingStatus(booking.requestId, 'in_progress', otp);
+      push('Work started!', 'success');
+      setOtpInputs((prev) => ({ ...prev, [booking.requestId]: '' }));
+      load(false);
+    } catch (err) {
+      push(err.message || 'Incorrect OTP.', 'error');
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  // Worker taps this once the physical work is actually finished - it
+  // sends a fresh completion OTP to the customer, it does NOT complete
+  // the job yet.
+  const handleRequestCompletionOtp = async (booking) => {
+    setSubmittingId(booking.requestId);
+    try {
+      await requestCompletionOtp(booking.requestId);
+      push('OTP sent to the customer - ask them for it to confirm completion.', 'success');
+      load(false);
+    } catch (err) {
+      push(err.message || 'Could not request completion OTP.', 'error');
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  // Customer reads out the completion OTP - entering it here is what
+  // actually marks the job completed and frees up the worker.
+  const handleVerifyCompletionOtp = async (booking) => {
+    const otp = (otpInputs[booking.requestId] || '').trim();
+    if (!otp) return push('Enter the OTP the customer gave you.', 'error');
+    setSubmittingId(booking.requestId);
+    try {
+      await updateBookingStatus(booking.requestId, 'completed', otp);
+      push('Job marked complete!', 'success');
+      setOtpInputs((prev) => ({ ...prev, [booking.requestId]: '' }));
+      load(false);
+    } catch (err) {
+      push(err.message || 'Incorrect OTP.', 'error');
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  // Worker pays their owed platform commission via Razorpay, same pattern
+  // as the customer's service payment flow elsewhere in the app.
+  const handlePayCommission = async (booking) => {
+    setPayingId(booking.requestId);
+    try {
+      const order = await createCommissionOrder(booking.requestId);
+      if (typeof window.Razorpay !== 'function') {
+        await loadRazorpayScript();
+      }
+      const rzp = new window.Razorpay({
+        key: order.razorpayKeyId,
+        amount: order.amount,
+        currency: order.currency,
+        order_id: order.razorpayOrderId,
+        name: 'KamWala',
+        description: `Commission for ${booking.requestId}`,
+        theme: { color: '#D97757' },
+        handler: async (response) => {
+          try {
+            await verifyCommissionPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            push('Commission paid. Thank you!', 'success');
+            load(false);
+          } catch (err) {
+            push(err.message || 'Payment verification failed.', 'error');
+          }
+        },
+      });
+      rzp.open();
+    } catch (err) {
+      push(err.message || 'Could not start payment.', 'error');
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -204,23 +312,100 @@ export default function WorkerDashboard() {
         <>
           {bookings.length === 0 && <EmptyState icon={Briefcase} title="No bookings yet" description="Accepted work will show up here." />}
           <div className="space-y-3">
-            {bookings.map((b) => (
-              <div key={b._id} className="bg-white border border-cloud-200 rounded-card p-4 shadow-soft">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <RequestIdTag id={b.requestId} size="sm" />
-                    <p className="font-display font-semibold text-sm mt-1.5">{b.service}</p>
-                    <p className="text-xs text-ink-500">{b.customerId?.name} · {b.address?.city}</p>
+            {bookings.map((b) => {
+              const isBusy = submittingId === b.requestId;
+              const completionRequested = !!b.completionOtp?.generatedAt && !b.completionOtp?.verifiedAt;
+
+              return (
+                <div key={b._id} className="bg-white border border-cloud-200 rounded-card p-4 shadow-soft">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <RequestIdTag id={b.requestId} size="sm" />
+                      <p className="font-display font-semibold text-sm mt-1.5">{b.service}</p>
+                      <p className="text-xs text-ink-500">{b.customerId?.name} · {b.address?.city}</p>
+                    </div>
+                    <StatusPill status={b.status} />
                   </div>
-                  <StatusPill status={b.status} />
+
+                  {/* assigned -> on the way: no OTP needed */}
+                  {b.status === 'assigned' && (
+                    <Button size="sm" variant="outline" className="w-full mt-3" onClick={() => handleAdvanceStatus(b)}>
+                      <CheckCircle2 size={14} /> {NEXT_LABEL.assigned}
+                    </Button>
+                  )}
+
+                  {/* on the way -> in progress: ask customer for start OTP */}
+                  {b.status === 'worker_on_the_way' && (
+                    <div className="mt-3 bg-cloud-50 rounded-lg p-3">
+                      <p className="text-xs text-ink-700 flex items-center gap-1.5 mb-2">
+                        <ShieldCheck size={13} className="text-brand-500" />
+                        Ask the customer for their start OTP to begin work
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          value={otpInputs[b.requestId] || ''}
+                          onChange={(e) => setOtpInputs((prev) => ({ ...prev, [b.requestId]: e.target.value }))}
+                          placeholder="Enter OTP"
+                          inputMode="numeric"
+                          maxLength={4}
+                          className="flex-1 min-w-0 border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400"
+                        />
+                        <Button size="sm" onClick={() => handleVerifyStartOtp(b)} disabled={isBusy}>
+                          {isBusy ? 'Checking…' : 'Confirm'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* in progress: either request the completion OTP, or (once
+                      requested) enter it to actually mark the job complete */}
+                  {b.status === 'in_progress' && !completionRequested && (
+                    <Button size="sm" variant="outline" className="w-full mt-3" onClick={() => handleRequestCompletionOtp(b)} disabled={isBusy}>
+                      <CheckCircle2 size={14} /> {isBusy ? 'Sending…' : 'Mark job as done'}
+                    </Button>
+                  )}
+                  {b.status === 'in_progress' && completionRequested && (
+                    <div className="mt-3 bg-cloud-50 rounded-lg p-3">
+                      <p className="text-xs text-ink-700 flex items-center gap-1.5 mb-2">
+                        <ShieldCheck size={13} className="text-brand-500" />
+                        Ask the customer for their completion OTP to finish
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          value={otpInputs[b.requestId] || ''}
+                          onChange={(e) => setOtpInputs((prev) => ({ ...prev, [b.requestId]: e.target.value }))}
+                          placeholder="Enter OTP"
+                          inputMode="numeric"
+                          maxLength={4}
+                          className="flex-1 min-w-0 border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400"
+                        />
+                        <Button size="sm" onClick={() => handleVerifyCompletionOtp(b)} disabled={isBusy}>
+                          {isBusy ? 'Checking…' : 'Confirm'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* completed: show commission owed (if any) and let the
+                      worker pay it right from here */}
+                  {b.status === 'completed' && b.commissionStatus === 'pending' && b.commissionAmount > 0 && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+                      <p className="text-xs text-amber-700">
+                        Commission due: <span className="font-semibold">₹{b.commissionAmount}</span> ({b.commissionPercent}%)
+                      </p>
+                      <Button size="sm" onClick={() => handlePayCommission(b)} disabled={payingId === b.requestId}>
+                        <IndianRupee size={14} /> {payingId === b.requestId ? 'Opening…' : 'Pay Now'}
+                      </Button>
+                    </div>
+                  )}
+                  {b.status === 'completed' && b.commissionStatus === 'paid' && (
+                    <p className="mt-3 text-xs text-mint-600 flex items-center gap-1.5">
+                      <CheckCircle2 size={13} /> Commission paid
+                    </p>
+                  )}
                 </div>
-                {NEXT_STATUS[b.status] && (
-                  <Button size="sm" variant="outline" className="w-full mt-3" onClick={() => handleAdvanceStatus(b)}>
-                    <CheckCircle2 size={14} /> {NEXT_LABEL[b.status]}
-                  </Button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
