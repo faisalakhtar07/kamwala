@@ -10,6 +10,7 @@ import {
   Repeat,
   XCircle,
   Send,
+  AlertTriangle,
 } from 'lucide-react';
 import AppLayout from '../components/AppLayout';
 import { ErrorState } from '../components/States';
@@ -20,6 +21,7 @@ import {
   getRequestDetail,
   cancelRequest,
   repeatRequest,
+  raiseDispute,
   getChatMessages,
   sendChatToOwner,
   submitReview,
@@ -62,6 +64,9 @@ export default function RequestDetail() {
   const [cancelling, setCancelling] = useState(false);
   const [repeating, setRepeating] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [submittingDispute, setSubmittingDispute] = useState(false);
 
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -98,6 +103,22 @@ export default function RequestDetail() {
       push(err.message || 'Could not cancel request.', 'error');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleRaiseDispute = async () => {
+    if (!disputeReason.trim()) return push('Please describe the issue.', 'error');
+    setSubmittingDispute(true);
+    try {
+      await raiseDispute(requestId, disputeReason.trim());
+      push('Issue reported. Our team will review it shortly.', 'success');
+      setShowDisputeForm(false);
+      setDisputeReason('');
+      load();
+    } catch (err) {
+      push(err.message || 'Could not report the issue.', 'error');
+    } finally {
+      setSubmittingDispute(false);
     }
   };
 
@@ -267,7 +288,7 @@ export default function RequestDetail() {
                 </Button>
               )}
 
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-2 mt-4 flex-wrap">
                 {!['completed', 'cancelled'].includes(request.status) && (
                   <Button variant="outline" size="sm" onClick={handleCancel} disabled={cancelling}>
                     <XCircle size={14} /> {cancelling ? 'Cancelling…' : 'Cancel request'}
@@ -278,7 +299,40 @@ export default function RequestDetail() {
                     <Repeat size={14} /> {repeating ? 'Creating…' : 'Book again'}
                   </Button>
                 )}
+                {!['cancelled', 'disputed', 'completed'].includes(request.status) && !showDisputeForm && (
+                  <Button variant="outline" size="sm" onClick={() => setShowDisputeForm(true)}>
+                    <AlertTriangle size={14} /> Report an issue
+                  </Button>
+                )}
               </div>
+
+              {showDisputeForm && (
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <Textarea
+                    rows={2}
+                    placeholder="What went wrong?"
+                    value={disputeReason}
+                    onChange={(e) => setDisputeReason(e.target.value)}
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <Button size="sm" onClick={handleRaiseDispute} disabled={submittingDispute}>
+                      {submittingDispute ? 'Submitting…' : 'Submit report'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setShowDisputeForm(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {request.status === 'disputed' && (
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
+                    <AlertTriangle size={13} /> Under review by our team
+                  </p>
+                  {request.disputeReason && <p className="text-xs text-ink-700 mt-1">{request.disputeReason}</p>}
+                </div>
+              )}
             </div>
 
             {!['cancelled', 'disputed'].includes(request.status) && (

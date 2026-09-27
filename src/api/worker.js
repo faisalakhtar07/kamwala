@@ -12,6 +12,10 @@ export const updateBookingStatus = (requestId, status, otp) =>
   api.patch(`/worker/bookings/${requestId}/status`, otp ? { status, otp } : { status });
 export const requestCompletionOtp = (requestId) =>
   api.post(`/worker/bookings/${requestId}/request-completion-otp`);
+export const raiseDispute = (requestId, reason) =>
+  api.patch(`/worker/bookings/${requestId}/dispute`, { reason });
+export const getMyEarnings = () => api.get('/worker/earnings');
+export const getLeaderboard = () => api.get('/worker/leaderboard');
 
 // Commission payment (worker pays their platform commission after a
 // completed job) - same Razorpay pattern as the customer service payment.

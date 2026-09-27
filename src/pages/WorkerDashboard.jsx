@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BellRing, MapPin, Users, IndianRupee, Clock, CheckCircle2, Briefcase, LogOut, ShieldCheck } from 'lucide-react';
+import { Bell, BellRing, MapPin, Users, IndianRupee, Clock, CheckCircle2, Briefcase, LogOut, ShieldCheck, AlertTriangle, Trophy, Wallet } from 'lucide-react';
 import AppLayout from '../components/AppLayout';
 import { CardSkeleton, EmptyState, ErrorState } from '../components/States';
 import { Button } from '../components/Form';
@@ -11,7 +11,7 @@ import { playNotificationSound } from '../utils/sound';
 import { enablePushNotifications, getPushPermission, isPushSupported } from '../utils/push';
 import {
   getMyWorkerProfile, setAvailability, getAvailableWork, acceptWork, getMyBookings, updateBookingStatus,
-  requestCompletionOtp, createCommissionOrder, verifyCommissionPayment,
+  requestCompletionOtp, createCommissionOrder, verifyCommissionPayment, raiseDispute, getMyEarnings, getLeaderboard,
 } from '../api/worker';
 
 function loadRazorpayScript() {
@@ -34,7 +34,11 @@ const AVAILABILITY_STYLE = {
 // way" needs no verification.
 const NEXT_STATUS = { assigned: 'worker_on_the_way' };
 const NEXT_LABEL = { assigned: "I'm on the way" };
-const TABS = [{ value: 'available', label: 'New Work' }, { value: 'active', label: 'My Bookings' }];
+const TABS = [
+  { value: 'available', label: 'New Work' },
+  { value: 'active', label: 'My Bookings' },
+  { value: 'earnings', label: 'Earnings' },
+];
 
 export default function WorkerDashboard() {
   const { logout } = useAuth();
@@ -54,6 +58,11 @@ export default function WorkerDashboard() {
   const [otpInputs, setOtpInputs] = useState({}); // { [requestId]: '1234' }
   const [submittingId, setSubmittingId] = useState(null); // requestId currently mid-action
   const [payingId, setPayingId] = useState(null);
+  const [earnings, setEarnings] = useState(null);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [disputeFormId, setDisputeFormId] = useState(null); // requestId with dispute form open
+  const [disputeReasons, setDisputeReasons] = useState({}); // { [requestId]: 'text' }
+  const [submittingDisputeId, setSubmittingDisputeId] = useState(null);
 
   const handleEnableNotifications = async () => {
     const ok = await enablePushNotifications();
@@ -64,7 +73,8 @@ export default function WorkerDashboard() {
   const load = (isPoll) => {
     if (!isPoll) setLoading(true);
     setError('');
-    Promise.all([getMyWorkerProfile(), getAvailableWork(), getMyBookings()])
+    const calls = [getMyWorkerProfile(), getAvailableWork(), getMyBookings()];
+    Promise.all(calls)
       .then(([p, work, myBookings]) => {
         setProfile(p);
         if (prevWorkCount !== null && work.length > prevWorkCount) {
@@ -76,6 +86,13 @@ export default function WorkerDashboard() {
       })
       .catch((e) => !isPoll && setError(e.message))
       .finally(() => !isPoll && setLoading(false));
+
+    // Earnings/leaderboard don't need the 20s poll cadence - only refresh
+    // them on a real (non-poll) load, e.g. first mount or after an action.
+    if (!isPoll) {
+      getMyEarnings().then(setEarnings).catch(() => {});
+      getLeaderboard().then(setLeaderboard).catch(() => {});
+    }
   };
 
   useEffect(() => {
@@ -125,6 +142,23 @@ export default function WorkerDashboard() {
       load(false);
     } catch (err) {
       push(err.message || 'Could not update status.', 'error');
+    }
+  };
+
+  const handleRaiseDispute = async (booking) => {
+    const reason = (disputeReasons[booking.requestId] || '').trim();
+    if (!reason) return push('Please describe the issue.', 'error');
+    setSubmittingDisputeId(booking.requestId);
+    try {
+      await raiseDispute(booking.requestId, reason);
+      push('Issue reported. Our team will review it shortly.', 'success');
+      setDisputeFormId(null);
+      setDisputeReasons((prev) => ({ ...prev, [booking.requestId]: '' }));
+      load(false);
+    } catch (err) {
+      push(err.message || 'Could not report the issue.', 'error');
+    } finally {
+      setSubmittingDisputeId(null);
     }
   };
 
@@ -279,6 +313,14 @@ export default function WorkerDashboard() {
 
       {tab === 'available' && (
         <>
+          {earnings?.totalCommissionPending > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-amber-700">
+                <span className="font-semibold">₹{earnings.totalCommissionPending} commission pending</span> — pay it to receive new work.
+              </p>
+              <Button size="sm" onClick={() => setTab('earnings')}>View & Pay</Button>
+            </div>
+          )}
           {availableWork.length === 0 && (
             <EmptyState icon={Bell} title="No matching work right now" description="New requests in your category and pincode area will show up here." />
           )}
@@ -403,10 +445,118 @@ export default function WorkerDashboard() {
                       <CheckCircle2 size={13} /> Commission paid
                     </p>
                   )}
+
+                  {/* dispute: available any time the job isn't already
+                      finished/cancelled/disputed */}
+                  {!['completed', 'cancelled', 'disputed'].includes(b.status) && disputeFormId !== b.requestId && (
+                    <button
+                      type="button"
+                      onClick={() => setDisputeFormId(b.requestId)}
+                      className="mt-3 flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-amber-600"
+                    >
+                      <AlertTriangle size={13} /> Report an issue
+                    </button>
+                  )}
+                  {disputeFormId === b.requestId && (
+                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <textarea
+                        rows={2}
+                        placeholder="What went wrong?"
+                        value={disputeReasons[b.requestId] || ''}
+                        onChange={(e) => setDisputeReasons((prev) => ({ ...prev, [b.requestId]: e.target.value }))}
+                        className="w-full border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400 resize-none"
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <Button size="sm" onClick={() => handleRaiseDispute(b)} disabled={submittingDisputeId === b.requestId}>
+                          {submittingDisputeId === b.requestId ? 'Submitting…' : 'Submit report'}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setDisputeFormId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {b.status === 'disputed' && (
+                    <p className="mt-3 text-xs text-amber-700 flex items-center gap-1.5">
+                      <AlertTriangle size={13} /> Under review by our team
+                    </p>
+                  )}
                 </div>
               );
             })}
           </div>
+        </>
+      )}
+
+      {tab === 'earnings' && (
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-white border border-cloud-200 rounded-card p-4 shadow-soft">
+              <p className="text-xs text-ink-500 flex items-center gap-1.5"><Wallet size={13} /> Total earned</p>
+              <p className="font-display font-bold text-xl mt-1">₹{earnings?.totalEarned ?? 0}</p>
+              <p className="text-xs text-ink-500 mt-0.5">{earnings?.totalJobsCompleted ?? 0} jobs completed</p>
+            </div>
+            <div className="bg-white border border-cloud-200 rounded-card p-4 shadow-soft">
+              <p className="text-xs text-ink-500 flex items-center gap-1.5"><Wallet size={13} /> This month</p>
+              <p className="font-display font-bold text-xl mt-1">₹{earnings?.thisMonthEarned ?? 0}</p>
+              <p className="text-xs text-ink-500 mt-0.5">{earnings?.thisMonthJobsCompleted ?? 0} jobs this month</p>
+            </div>
+          </div>
+
+          {earnings?.totalCommissionPending > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-amber-700 font-semibold">₹{earnings.totalCommissionPending} commission pending</p>
+              <p className="text-xs text-amber-700 mt-0.5">Pay it from the job's card in "My Bookings" to keep receiving new work.</p>
+            </div>
+          )}
+
+          <h2 className="font-display font-semibold text-sm mb-2">Recent completed jobs</h2>
+          {(!earnings?.recentJobs || earnings.recentJobs.length === 0) ? (
+            <EmptyState icon={Wallet} title="No completed jobs yet" description="Your completed jobs and earnings will show up here." />
+          ) : (
+            <div className="space-y-2 mb-6">
+              {earnings.recentJobs.map((j) => (
+                <div key={j._id} className="bg-white border border-cloud-200 rounded-card p-3 flex items-center justify-between gap-3">
+                  <div>
+                    <RequestIdTag id={j.requestId} size="sm" />
+                    <p className="text-xs text-ink-500 mt-1">{j.service}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold">₹{j.finalPrice || j.estimatedPrice || 0}</p>
+                    {j.commissionAmount > 0 && (
+                      <p className={`text-[11px] ${j.commissionStatus === 'paid' ? 'text-mint-600' : 'text-amber-600'}`}>
+                        {j.commissionStatus === 'paid' ? 'Commission paid' : `₹${j.commissionAmount} due`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <h2 className="font-display font-semibold text-sm mb-2 flex items-center gap-1.5">
+            <Trophy size={15} className="text-amber-500" /> This month's top workers
+          </h2>
+          {leaderboard.length === 0 ? (
+            <EmptyState icon={Trophy} title="No leaderboard data yet" description="Complete jobs this month to appear here." />
+          ) : (
+            <div className="bg-white border border-cloud-200 rounded-card shadow-soft divide-y divide-cloud-100">
+              {leaderboard.map((w, i) => (
+                <div key={w.workerId} className="flex items-center gap-3 px-4 py-3">
+                  <span className="font-display font-bold text-sm text-ink-500 w-5">{i + 1}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{w.name}</p>
+                    <p className="text-xs text-ink-500">{w.jobsThisMonth} jobs this month</p>
+                  </div>
+                  {w.badge && (
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-pill bg-amber-50 text-amber-600 border border-amber-200">
+                      {w.badge}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
