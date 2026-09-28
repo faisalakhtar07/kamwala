@@ -6,10 +6,12 @@ import { Button, Input } from '../components/Form';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { addAddress, updateMyProfile } from '../api/misc';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function Profile() {
   const { user, refreshUser, logout } = useAuth();
   const { push } = useToast();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const [name, setName] = useState(user?.name || '');
@@ -56,7 +58,36 @@ export default function Profile() {
 
   return (
     <AppLayout>
-      <h1 className="font-display font-bold text-xl mb-5">My Profile</h1>
+      <h1 className="font-display font-bold text-xl mb-5">{t('profile.title')}</h1>
+
+      {user?.referralCode && (
+        <div className="bg-brand-50 border border-brand-200 rounded-card p-4 mb-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-xs text-ink-500">{t('profile.referralCode')}</p>
+              <p className="font-display font-bold text-lg tracking-wider">{user.referralCode}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-ink-500">{t('profile.walletBalance')}</p>
+              <p className="font-display font-bold text-lg">₹{user.walletBalance ?? 0}</p>
+            </div>
+          </div>
+          <p className="text-xs text-ink-500 mt-2">
+            {t('profile.referralHelp')}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2"
+            onClick={() => {
+              navigator.clipboard?.writeText(user.referralCode);
+              push('Referral code copied!', 'success');
+            }}
+          >
+            {t('common.copy')}
+          </Button>
+        </div>
+      )}
 
       <div className="bg-white border border-cloud-200 rounded-card p-5 shadow-soft mb-4">
         <div className="flex items-center gap-3 mb-4">

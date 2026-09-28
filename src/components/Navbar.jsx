@@ -1,9 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
+import LanguageToggle from './LanguageToggle';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   return (
@@ -14,12 +17,13 @@ export default function Navbar() {
       </Link>
 
       <nav className="flex items-center gap-6 text-sm font-medium text-ink-700">
-        <Link to="/categories" className="hover:text-ink-900">Categories</Link>
+        <Link to="/categories" className="hover:text-ink-900">{t('nav.categories')}</Link>
         <Link to="/ai-chat" className="hover:text-ink-900">Ask KamWala AI</Link>
-        <Link to="/dashboard" className="hover:text-ink-900">My Requests</Link>
+        <Link to="/dashboard" className="hover:text-ink-900">{t('nav.requests')}</Link>
       </nav>
 
       <div className="ml-auto flex items-center gap-3">
+        <LanguageToggle />
         <Link to="/notifications" className="h-10 w-10 rounded-full bg-cloud-50 border border-cloud-200 flex items-center justify-center hover:bg-cloud-100" aria-label="Notifications">
           <Bell size={18} className="text-ink-700" />
         </Link>
@@ -28,7 +32,7 @@ export default function Navbar() {
             onClick={() => { logout(); navigate('/login'); }}
             className="flex items-center gap-2 text-sm font-medium text-ink-700 hover:text-rose-500"
           >
-            <LogOut size={16} /> Log out
+            <LogOut size={16} /> {t('common.logout')}
           </button>
         ) : (
           <>

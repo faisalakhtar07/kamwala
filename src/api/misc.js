@@ -19,6 +19,7 @@ export const getMyRequests = (status) => api.get(`/requests${status ? `?status=$
 export const getRequestDetail = (requestId) => api.get(`/requests/${requestId}`);
 export const cancelRequest = (requestId, reason) => api.patch(`/requests/${requestId}/cancel`, { reason });
 export const repeatRequest = (requestId) => api.post(`/requests/${requestId}/repeat`);
+export const setRecurrence = (requestId, frequency) => api.patch(`/requests/${requestId}/recurrence`, { frequency });
 export const raiseDispute = (requestId, reason) => api.patch(`/requests/${requestId}/dispute`, { reason });
 
 // Reviews

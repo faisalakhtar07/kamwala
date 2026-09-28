@@ -6,12 +6,15 @@ import { CardSkeleton, EmptyState, ErrorState } from '../components/States';
 import { Button } from '../components/Form';
 import { StatusPill, RequestIdTag } from '../components/StatusPill';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
+import LanguageToggle from '../components/LanguageToggle';
 import { useToast } from '../context/ToastContext';
 import { playNotificationSound } from '../utils/sound';
 import { enablePushNotifications, getPushPermission, isPushSupported } from '../utils/push';
 import {
   getMyWorkerProfile, setAvailability, getAvailableWork, acceptWork, getMyBookings, updateBookingStatus,
   requestCompletionOtp, createCommissionOrder, verifyCommissionPayment, raiseDispute, getMyEarnings, getLeaderboard,
+  updateMyServicePricing,
 } from '../api/worker';
 
 function loadRazorpayScript() {
@@ -35,14 +38,16 @@ const AVAILABILITY_STYLE = {
 const NEXT_STATUS = { assigned: 'worker_on_the_way' };
 const NEXT_LABEL = { assigned: "I'm on the way" };
 const TABS = [
-  { value: 'available', label: 'New Work' },
-  { value: 'active', label: 'My Bookings' },
-  { value: 'earnings', label: 'Earnings' },
+  { value: 'available', label: 'worker.tab.newWork' },
+  { value: 'active', label: 'worker.tab.myBookings' },
+  { value: 'services', label: 'worker.tab.myPricing' },
+  { value: 'earnings', label: 'worker.tab.earnings' },
 ];
 
 export default function WorkerDashboard() {
   const { logout } = useAuth();
   const { push } = useToast();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const [profile, setProfile] = useState(null);
@@ -63,6 +68,8 @@ export default function WorkerDashboard() {
   const [disputeFormId, setDisputeFormId] = useState(null); // requestId with dispute form open
   const [disputeReasons, setDisputeReasons] = useState({}); // { [requestId]: 'text' }
   const [submittingDisputeId, setSubmittingDisputeId] = useState(null);
+  const [servicePricingRows, setServicePricingRows] = useState([]);
+  const [savingPricing, setSavingPricing] = useState(false);
 
   const handleEnableNotifications = async () => {
     const ok = await enablePushNotifications();
@@ -101,6 +108,39 @@ export default function WorkerDashboard() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Seed the editable pricing rows from the worker's saved profile, once,
+  // the first time it loads - don't clobber their in-progress edits on
+  // later polls.
+  useEffect(() => {
+    if (profile && servicePricingRows.length === 0 && profile.servicePricing?.length > 0) {
+      setServicePricingRows(profile.servicePricing.map((s) => ({ name: s.name, price: String(s.price) })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
+
+  const handleAddPricingRow = () => setServicePricingRows((rows) => [...rows, { name: '', price: '' }]);
+  const handleRemovePricingRow = (i) => setServicePricingRows((rows) => rows.filter((_, idx) => idx !== i));
+  const handlePricingRowChange = (i, field, value) =>
+    setServicePricingRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+
+  const handleSaveServicePricing = async () => {
+    const cleaned = servicePricingRows
+      .map((r) => ({ name: r.name.trim(), price: Number(r.price) }))
+      .filter((r) => r.name && !Number.isNaN(r.price) && r.price >= 0);
+    if (cleaned.length === 0) return push('Add at least one service with a valid price.', 'error');
+
+    setSavingPricing(true);
+    try {
+      const updated = await updateMyServicePricing(cleaned);
+      setProfile(updated);
+      push('Pricing saved.', 'success');
+    } catch (err) {
+      push(err.message || 'Could not save pricing.', 'error');
+    } finally {
+      setSavingPricing(false);
+    }
+  };
 
   const cycleAvailability = async () => {
     if (!profile) return;
@@ -220,6 +260,11 @@ export default function WorkerDashboard() {
     setPayingId(booking.requestId);
     try {
       const order = await createCommissionOrder(booking.requestId);
+      if (order.paidFromWallet) {
+        push('Commission paid from your wallet balance.', 'success');
+        load(false);
+        return;
+      }
       if (typeof window.Razorpay !== 'function') {
         await loadRazorpayScript();
       }
@@ -253,7 +298,7 @@ export default function WorkerDashboard() {
     }
   };
 
-  if (loading) return <AppLayout title="Worker Dashboard"><CardSkeleton count={3} /></AppLayout>;
+  if (loading) return <AppLayout title={t('worker.title')}><CardSkeleton count={3} /></AppLayout>;
   if (error) return <AppLayout title="Worker Dashboard"><ErrorState message={error} onRetry={() => load(false)} /></AppLayout>;
 
   return (
@@ -280,7 +325,7 @@ export default function WorkerDashboard() {
             className="mt-3 flex items-center gap-1.5 text-xs font-medium text-brand-600 bg-brand-50 border border-brand-200 rounded-pill px-3 py-1.5 hover:bg-brand-100 transition-colors w-fit"
           >
             <BellRing size={14} />
-            {pushPermission === 'denied' ? 'Notifications blocked — check browser settings' : 'Enable notifications for new work'}
+            {pushPermission === 'denied' ? 'Notifications blocked — check browser settings' : t('worker.enableNotifications')}
           </button>
         )}
         <div className="grid grid-cols-3 gap-3 mt-4">
@@ -300,11 +345,11 @@ export default function WorkerDashboard() {
       </div>
 
       <div className="flex gap-1.5 mb-4">
-        {TABS.map((t) => (
-          <button key={t.value} onClick={() => setTab(t.value)}
-            className={`rounded-pill px-4 py-2 text-sm font-medium transition-colors ${tab === t.value ? 'bg-brand-500 text-white' : 'bg-white border border-cloud-200 text-ink-700 hover:bg-cloud-50'}`}>
-            {t.label}
-            {t.value === 'available' && availableWork.length > 0 && (
+        {TABS.map((tabItem) => (
+          <button key={tabItem.value} onClick={() => setTab(tabItem.value)}
+            className={`rounded-pill px-4 py-2 text-sm font-medium transition-colors ${tab === tabItem.value ? 'bg-brand-500 text-white' : 'bg-white border border-cloud-200 text-ink-700 hover:bg-cloud-50'}`}>
+            {t(tabItem.label)}
+            {tabItem.value === 'available' && availableWork.length > 0 && (
               <span className="ml-1.5 bg-white/25 rounded-pill px-1.5">{availableWork.length}</span>
             )}
           </button>
@@ -316,13 +361,13 @@ export default function WorkerDashboard() {
           {earnings?.totalCommissionPending > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
               <p className="text-xs text-amber-700">
-                <span className="font-semibold">₹{earnings.totalCommissionPending} commission pending</span> — pay it to receive new work.
+                <span className="font-semibold">₹{earnings.totalCommissionPending} {t('worker.commissionPending')}</span>
               </p>
               <Button size="sm" onClick={() => setTab('earnings')}>View & Pay</Button>
             </div>
           )}
           {availableWork.length === 0 && (
-            <EmptyState icon={Bell} title="No matching work right now" description="New requests in your category and pincode area will show up here." />
+            <EmptyState icon={Bell} title={t('worker.noWork')} description={t('worker.noWorkDesc')} />
           )}
           <div className="space-y-3">
             {availableWork.map((w) => (
@@ -342,7 +387,7 @@ export default function WorkerDashboard() {
                   {(w.budget || w.estimatedPrice) && <span className="flex items-center gap-1"><IndianRupee size={12} /> {w.estimatedPrice || w.budget}</span>}
                 </div>
                 <Button size="sm" className="w-full mt-3" onClick={() => handleAccept(w.requestId)} disabled={acceptingId === w.requestId}>
-                  {acceptingId === w.requestId ? 'Accepting…' : 'Accept Work'}
+                  {acceptingId === w.requestId ? t('common.saving') : t('worker.accept')}
                 </Button>
               </div>
             ))}
@@ -352,7 +397,7 @@ export default function WorkerDashboard() {
 
       {tab === 'active' && (
         <>
-          {bookings.length === 0 && <EmptyState icon={Briefcase} title="No bookings yet" description="Accepted work will show up here." />}
+          {bookings.length === 0 && <EmptyState icon={Briefcase} title={t('worker.noBookings')} description={t('worker.noBookingsDesc')} />}
           <div className="space-y-3">
             {bookings.map((b) => {
               const isBusy = submittingId === b.requestId;
@@ -372,7 +417,7 @@ export default function WorkerDashboard() {
                   {/* assigned -> on the way: no OTP needed */}
                   {b.status === 'assigned' && (
                     <Button size="sm" variant="outline" className="w-full mt-3" onClick={() => handleAdvanceStatus(b)}>
-                      <CheckCircle2 size={14} /> {NEXT_LABEL.assigned}
+                      <CheckCircle2 size={14} /> {t('worker.onTheWay')}
                     </Button>
                   )}
 
@@ -381,19 +426,19 @@ export default function WorkerDashboard() {
                     <div className="mt-3 bg-cloud-50 rounded-lg p-3">
                       <p className="text-xs text-ink-700 flex items-center gap-1.5 mb-2">
                         <ShieldCheck size={13} className="text-brand-500" />
-                        Ask the customer for their start OTP to begin work
+                        {t('worker.askStartOtp')}
                       </p>
                       <div className="flex gap-2">
                         <input
                           value={otpInputs[b.requestId] || ''}
                           onChange={(e) => setOtpInputs((prev) => ({ ...prev, [b.requestId]: e.target.value }))}
-                          placeholder="Enter OTP"
+                          placeholder={t('worker.enterOtp')}
                           inputMode="numeric"
                           maxLength={4}
                           className="flex-1 min-w-0 border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400"
                         />
                         <Button size="sm" onClick={() => handleVerifyStartOtp(b)} disabled={isBusy}>
-                          {isBusy ? 'Checking…' : 'Confirm'}
+                          {isBusy ? t('common.checking') : t('common.confirm')}
                         </Button>
                       </div>
                     </div>
@@ -403,26 +448,26 @@ export default function WorkerDashboard() {
                       requested) enter it to actually mark the job complete */}
                   {b.status === 'in_progress' && !completionRequested && (
                     <Button size="sm" variant="outline" className="w-full mt-3" onClick={() => handleRequestCompletionOtp(b)} disabled={isBusy}>
-                      <CheckCircle2 size={14} /> {isBusy ? 'Sending…' : 'Mark job as done'}
+                      <CheckCircle2 size={14} /> {isBusy ? t('common.saving') : t('worker.markDone')}
                     </Button>
                   )}
                   {b.status === 'in_progress' && completionRequested && (
                     <div className="mt-3 bg-cloud-50 rounded-lg p-3">
                       <p className="text-xs text-ink-700 flex items-center gap-1.5 mb-2">
                         <ShieldCheck size={13} className="text-brand-500" />
-                        Ask the customer for their completion OTP to finish
+                        {t('worker.askCompletionOtp')}
                       </p>
                       <div className="flex gap-2">
                         <input
                           value={otpInputs[b.requestId] || ''}
                           onChange={(e) => setOtpInputs((prev) => ({ ...prev, [b.requestId]: e.target.value }))}
-                          placeholder="Enter OTP"
+                          placeholder={t('worker.enterOtp')}
                           inputMode="numeric"
                           maxLength={4}
                           className="flex-1 min-w-0 border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400"
                         />
                         <Button size="sm" onClick={() => handleVerifyCompletionOtp(b)} disabled={isBusy}>
-                          {isBusy ? 'Checking…' : 'Confirm'}
+                          {isBusy ? t('common.checking') : t('common.confirm')}
                         </Button>
                       </div>
                     </div>
@@ -433,16 +478,16 @@ export default function WorkerDashboard() {
                   {b.status === 'completed' && b.commissionStatus === 'pending' && b.commissionAmount > 0 && (
                     <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
                       <p className="text-xs text-amber-700">
-                        Commission due: <span className="font-semibold">₹{b.commissionAmount}</span> ({b.commissionPercent}%)
+                        {t('worker.commissionDue')}: <span className="font-semibold">₹{b.commissionAmount}</span> ({b.commissionPercent}%)
                       </p>
                       <Button size="sm" onClick={() => handlePayCommission(b)} disabled={payingId === b.requestId}>
-                        <IndianRupee size={14} /> {payingId === b.requestId ? 'Opening…' : 'Pay Now'}
+                        <IndianRupee size={14} /> {payingId === b.requestId ? t('common.saving') : t('worker.payNow')}
                       </Button>
                     </div>
                   )}
                   {b.status === 'completed' && b.commissionStatus === 'paid' && (
                     <p className="mt-3 text-xs text-mint-600 flex items-center gap-1.5">
-                      <CheckCircle2 size={13} /> Commission paid
+                      <CheckCircle2 size={13} /> {t('worker.commissionPaid')}
                     </p>
                   )}
 
@@ -454,21 +499,21 @@ export default function WorkerDashboard() {
                       onClick={() => setDisputeFormId(b.requestId)}
                       className="mt-3 flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-amber-600"
                     >
-                      <AlertTriangle size={13} /> Report an issue
+                      <AlertTriangle size={13} /> {t('worker.reportIssue')}
                     </button>
                   )}
                   {disputeFormId === b.requestId && (
                     <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
                       <textarea
                         rows={2}
-                        placeholder="What went wrong?"
+                        placeholder={t('worker.whatWentWrong')}
                         value={disputeReasons[b.requestId] || ''}
                         onChange={(e) => setDisputeReasons((prev) => ({ ...prev, [b.requestId]: e.target.value }))}
                         className="w-full border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400 resize-none"
                       />
                       <div className="flex gap-2 mt-2">
                         <Button size="sm" onClick={() => handleRaiseDispute(b)} disabled={submittingDisputeId === b.requestId}>
-                          {submittingDisputeId === b.requestId ? 'Submitting…' : 'Submit report'}
+                          {submittingDisputeId === b.requestId ? t('common.saving') : t('worker.submitReport')}
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setDisputeFormId(null)}>
                           Cancel
@@ -478,7 +523,7 @@ export default function WorkerDashboard() {
                   )}
                   {b.status === 'disputed' && (
                     <p className="mt-3 text-xs text-amber-700 flex items-center gap-1.5">
-                      <AlertTriangle size={13} /> Under review by our team
+                      <AlertTriangle size={13} /> {t('worker.underReview')}
                     </p>
                   )}
                 </div>
@@ -488,16 +533,84 @@ export default function WorkerDashboard() {
         </>
       )}
 
+      {tab === 'services' && (
+        <>
+          <p className="text-xs text-ink-500 mb-3">
+            {t('worker.pricingHelp')}
+          </p>
+          <div className="space-y-2 mb-3">
+            {servicePricingRows.map((row, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input
+                  value={row.name}
+                  onChange={(e) => handlePricingRowChange(i, 'name', e.target.value)}
+                  placeholder={t('worker.serviceName')}
+                  className="flex-1 min-w-0 border border-cloud-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-400"
+                />
+                <div className="relative w-28">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-500 text-sm">₹</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={row.price}
+                    onChange={(e) => handlePricingRowChange(i, 'price', e.target.value)}
+                    placeholder={t('worker.price')}
+                    className="w-full border border-cloud-200 rounded-lg pl-6 pr-2 py-2 text-sm outline-none focus:border-brand-400"
+                  />
+                </div>
+                <button type="button" onClick={() => handleRemovePricingRow(i)} className="text-ink-500 hover:text-rose-500 text-xs px-1">
+                  {t('common.remove')}
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleAddPricingRow}>{t('worker.addService')}</Button>
+            <Button size="sm" onClick={handleSaveServicePricing} disabled={savingPricing}>
+              {savingPricing ? t('common.saving') : t('worker.savePricing')}
+            </Button>
+          </div>
+        </>
+      )}
+
       {tab === 'earnings' && (
         <>
+          {profile?.referralCode && (
+            <div className="bg-brand-50 border border-brand-200 rounded-card p-4 mb-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-xs text-ink-500">{t('worker.referralCode')}</p>
+                  <p className="font-display font-bold text-lg tracking-wider">{profile.referralCode}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-ink-500">{t('worker.walletBalance')}</p>
+                  <p className="font-display font-bold text-lg">₹{profile.walletBalance ?? 0}</p>
+                </div>
+              </div>
+              <p className="text-xs text-ink-500 mt-2">
+                Share your code - you and your friend both get wallet credit when they sign up. Wallet balance is auto-used to pay your commission.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => {
+                  navigator.clipboard?.writeText(profile.referralCode);
+                  push('Referral code copied!', 'success');
+                }}
+              >
+                {t('common.copy')}
+              </Button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-white border border-cloud-200 rounded-card p-4 shadow-soft">
-              <p className="text-xs text-ink-500 flex items-center gap-1.5"><Wallet size={13} /> Total earned</p>
+              <p className="text-xs text-ink-500 flex items-center gap-1.5"><Wallet size={13} /> {t('worker.totalEarned')}</p>
               <p className="font-display font-bold text-xl mt-1">₹{earnings?.totalEarned ?? 0}</p>
-              <p className="text-xs text-ink-500 mt-0.5">{earnings?.totalJobsCompleted ?? 0} jobs completed</p>
+              <p className="text-xs text-ink-500 mt-0.5">{earnings?.totalJobsCompleted ?? 0} {t('worker.jobsCompleted')}</p>
             </div>
             <div className="bg-white border border-cloud-200 rounded-card p-4 shadow-soft">
-              <p className="text-xs text-ink-500 flex items-center gap-1.5"><Wallet size={13} /> This month</p>
+              <p className="text-xs text-ink-500 flex items-center gap-1.5"><Wallet size={13} /> {t('worker.thisMonth')}</p>
               <p className="font-display font-bold text-xl mt-1">₹{earnings?.thisMonthEarned ?? 0}</p>
               <p className="text-xs text-ink-500 mt-0.5">{earnings?.thisMonthJobsCompleted ?? 0} jobs this month</p>
             </div>
@@ -505,12 +618,12 @@ export default function WorkerDashboard() {
 
           {earnings?.totalCommissionPending > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-              <p className="text-xs text-amber-700 font-semibold">₹{earnings.totalCommissionPending} commission pending</p>
+              <p className="text-xs text-amber-700 font-semibold">₹{earnings.totalCommissionPending} {t('worker.commissionPending')}</p>
               <p className="text-xs text-amber-700 mt-0.5">Pay it from the job's card in "My Bookings" to keep receiving new work.</p>
             </div>
           )}
 
-          <h2 className="font-display font-semibold text-sm mb-2">Recent completed jobs</h2>
+          <h2 className="font-display font-semibold text-sm mb-2">{t('worker.recentJobs')}</h2>
           {(!earnings?.recentJobs || earnings.recentJobs.length === 0) ? (
             <EmptyState icon={Wallet} title="No completed jobs yet" description="Your completed jobs and earnings will show up here." />
           ) : (
@@ -525,7 +638,7 @@ export default function WorkerDashboard() {
                     <p className="text-sm font-semibold">₹{j.finalPrice || j.estimatedPrice || 0}</p>
                     {j.commissionAmount > 0 && (
                       <p className={`text-[11px] ${j.commissionStatus === 'paid' ? 'text-mint-600' : 'text-amber-600'}`}>
-                        {j.commissionStatus === 'paid' ? 'Commission paid' : `₹${j.commissionAmount} due`}
+                        {j.commissionStatus === 'paid' ? t('worker.commissionPaid') : `₹${j.commissionAmount} due`}
                       </p>
                     )}
                   </div>
@@ -535,7 +648,7 @@ export default function WorkerDashboard() {
           )}
 
           <h2 className="font-display font-semibold text-sm mb-2 flex items-center gap-1.5">
-            <Trophy size={15} className="text-amber-500" /> This month's top workers
+            <Trophy size={15} className="text-amber-500" /> {t('worker.leaderboard')}
           </h2>
           {leaderboard.length === 0 ? (
             <EmptyState icon={Trophy} title="No leaderboard data yet" description="Complete jobs this month to appear here." />
@@ -561,7 +674,7 @@ export default function WorkerDashboard() {
       )}
 
       <button onClick={() => { logout(); navigate('/login'); }} className="flex items-center gap-2 text-sm font-medium text-ink-500 hover:text-rose-500 mt-8 mx-auto">
-        <LogOut size={15} /> Log out
+        <LogOut size={15} /> {t('common.logout')}
       </button>
     </AppLayout>
   );

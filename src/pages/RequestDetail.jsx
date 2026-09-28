@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -22,6 +23,7 @@ import {
   cancelRequest,
   repeatRequest,
   raiseDispute,
+  setRecurrence,
   getChatMessages,
   sendChatToOwner,
   submitReview,
@@ -56,6 +58,7 @@ export default function RequestDetail() {
   const { requestId } = useParams();
   const navigate = useNavigate();
   const { push } = useToast();
+  const { t } = useLanguage();
   const chatEndRef = useRef(null);
 
   const [request, setRequest] = useState(null);
@@ -64,6 +67,7 @@ export default function RequestDetail() {
   const [cancelling, setCancelling] = useState(false);
   const [repeating, setRepeating] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [settingRecurrence, setSettingRecurrence] = useState(false);
   const [showDisputeForm, setShowDisputeForm] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
   const [submittingDispute, setSubmittingDispute] = useState(false);
@@ -103,6 +107,19 @@ export default function RequestDetail() {
       push(err.message || 'Could not cancel request.', 'error');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleSetRecurrence = async (frequency) => {
+    setSettingRecurrence(true);
+    try {
+      await setRecurrence(requestId, frequency);
+      push(frequency === 'none' ? 'Recurring booking stopped.' : `This booking will repeat ${frequency}.`, 'success');
+      load();
+    } catch (err) {
+      push(err.message || 'Could not update recurring booking.', 'error');
+    } finally {
+      setSettingRecurrence(false);
     }
   };
 
@@ -291,17 +308,32 @@ export default function RequestDetail() {
               <div className="flex gap-2 mt-4 flex-wrap">
                 {!['completed', 'cancelled'].includes(request.status) && (
                   <Button variant="outline" size="sm" onClick={handleCancel} disabled={cancelling}>
-                    <XCircle size={14} /> {cancelling ? 'Cancelling…' : 'Cancel request'}
+                    <XCircle size={14} /> {cancelling ? t('common.saving') : t('request.cancel')}
                   </Button>
                 )}
                 {request.status === 'completed' && (
                   <Button variant="outline" size="sm" onClick={handleRepeat} disabled={repeating}>
-                    <Repeat size={14} /> {repeating ? 'Creating…' : 'Book again'}
+                    <Repeat size={14} /> {repeating ? t('common.saving') : t('request.bookAgain')}
+                  </Button>
+                )}
+                {request.status === 'completed' && !request.recurringActive && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => handleSetRecurrence('weekly')} disabled={settingRecurrence}>
+                      <Repeat size={14} /> {t('request.repeatWeekly')}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleSetRecurrence('monthly')} disabled={settingRecurrence}>
+                      <Repeat size={14} /> {t('request.repeatMonthly')}
+                    </Button>
+                  </>
+                )}
+                {request.recurringActive && (
+                  <Button variant="outline" size="sm" onClick={() => handleSetRecurrence('none')} disabled={settingRecurrence}>
+                    <XCircle size={14} /> {t('request.stopRepeating')} ({request.recurringFrequency})
                   </Button>
                 )}
                 {!['cancelled', 'disputed', 'completed'].includes(request.status) && !showDisputeForm && (
                   <Button variant="outline" size="sm" onClick={() => setShowDisputeForm(true)}>
-                    <AlertTriangle size={14} /> Report an issue
+                    <AlertTriangle size={14} /> {t('request.reportIssue')}
                   </Button>
                 )}
               </div>
@@ -316,7 +348,7 @@ export default function RequestDetail() {
                   />
                   <div className="flex gap-2 mt-2">
                     <Button size="sm" onClick={handleRaiseDispute} disabled={submittingDispute}>
-                      {submittingDispute ? 'Submitting…' : 'Submit report'}
+                      {submittingDispute ? t('common.saving') : t('request.submitReport')}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setShowDisputeForm(false)}>
                       Cancel
@@ -328,7 +360,7 @@ export default function RequestDetail() {
               {request.status === 'disputed' && (
                 <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
                   <p className="text-xs font-medium text-amber-700 flex items-center gap-1.5">
-                    <AlertTriangle size={13} /> Under review by our team
+                    <AlertTriangle size={13} /> {t('request.underReview')}
                   </p>
                   {request.disputeReason && <p className="text-xs text-ink-700 mt-1">{request.disputeReason}</p>}
                 </div>
