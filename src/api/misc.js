@@ -15,6 +15,9 @@ export const addAddress = (payload) => api.post('/customers/me/addresses', paylo
 
 // Requests
 export const createRequest = (payload) => api.post('/requests', payload);
+export const bookWorkerDirect = (payload) => api.post('/requests/book-worker', payload);
+export const getWorkersByCategory = (category) =>
+  api.get(`/public/workers?category=${encodeURIComponent(category)}`);
 export const getMyRequests = (status) => api.get(`/requests${status ? `?status=${status}` : ''}`);
 export const getRequestDetail = (requestId) => api.get(`/requests/${requestId}`);
 export const cancelRequest = (requestId, reason) => api.patch(`/requests/${requestId}/cancel`, { reason });

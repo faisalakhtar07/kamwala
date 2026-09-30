@@ -6,18 +6,19 @@ import AppLayout from '../components/AppLayout';
 import { CardSkeleton, EmptyState } from '../components/States';
 import { Button, Input } from '../components/Form';
 import { Modal } from '../components/Modal';
-import { getCategories, getServices, createRequest } from '../api/misc';
+import { getCategories, getServices, createRequest, getWorkersByCategory, bookWorkerDirect } from '../api/misc';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export default function CategoryServices() {
   const { categoryId } = useParams();
   const navigate = useNavigate();
-  const { isAuthed } = useAuth();
+  const { isAuthed, role } = useAuth();
   const { push } = useToast();
 
   const [category, setCategory] = useState(null);
   const [services, setServices] = useState([]);
+  const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [bookingService, setBookingService] = useState(null);
   const [form, setForm] = useState({ fullAddress: '', city: '', pincode: '', preferredTime: '' });
@@ -37,12 +38,47 @@ export default function CategoryServices() {
       .finally(() => setLoading(false));
   }, [categoryId]);
 
+  // Workers who've set their own price for this category - fetched once we
+  // know the category's name (separate call since it depends on the
+  // category lookup above resolving first).
+  useEffect(() => {
+    if (!category?.name) return;
+    getWorkersByCategory(category.name)
+      .then(setWorkers)
+      .catch(() => setWorkers([]));
+  }, [category?.name]);
+
   const openBooking = (service) => {
     if (!isAuthed) {
       navigate('/login');
       return;
     }
+    if (role === 'worker') {
+      push('This is a worker account - please log in with a customer account to book a service.', 'error');
+      return;
+    }
     setBookingService(service);
+  };
+
+  // Customer picked a SPECIFIC worker's own priced listing (not the admin
+  // catalog) - booking this goes straight to that worker, skipping the
+  // generic "whole category pool, first to accept wins" flow.
+  const openWorkerBooking = (worker, entry) => {
+    if (!isAuthed) {
+      navigate('/login');
+      return;
+    }
+    if (role === 'worker') {
+      push('This is a worker account - please log in with a customer account to book a service.', 'error');
+      return;
+    }
+    setBookingService({
+      isWorkerListing: true,
+      workerId: worker._id,
+      workerName: worker.name,
+      name: entry.name,
+      finalPrice: entry.price,
+    });
   };
 
   const handleBook = async (e) => {
@@ -51,21 +87,37 @@ export default function CategoryServices() {
       push('Please fill in your full address, city and pincode.', 'error');
       return;
     }
+    if (!/^\d{6}$/.test(form.pincode.trim())) {
+      push('Enter a valid 6-digit pincode (numbers only) so a worker in your area can find this job.', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
-      const created = await createRequest({
-        serviceCategory: category?.name || 'Service',
-        service: bookingService.name,
-        description: bookingService.description,
-        address: {
-          fullAddress: form.fullAddress,
-          city: form.city,
-          pincode: form.pincode,
-        },
-        preferredTime: form.preferredTime,
-        selectedServiceId: bookingService._id,
-      });
-      push('Service booked! Track it from My Requests.', 'success');
+      const addressPayload = {
+        fullAddress: form.fullAddress,
+        city: form.city,
+        pincode: form.pincode,
+      };
+
+      const created = bookingService.isWorkerListing
+        ? await bookWorkerDirect({
+            workerId: bookingService.workerId,
+            service: bookingService.name,
+            address: addressPayload,
+            preferredTime: form.preferredTime,
+          })
+        : await createRequest({
+            serviceCategory: category?.name || 'Service',
+            service: bookingService.name,
+            description: bookingService.description,
+            address: addressPayload,
+            preferredTime: form.preferredTime,
+            selectedServiceId: bookingService._id,
+          });
+      push(
+        bookingService.isWorkerListing ? `Booked with ${bookingService.workerName}!` : 'Service booked! Track it from My Requests.',
+        'success'
+      );
       setBookingService(null);
       navigate(`/requests/${created.requestId}`);
     } catch (err) {
@@ -158,6 +210,48 @@ export default function CategoryServices() {
               );
             })}
           </div>
+
+          {workers.length > 0 && (
+            <div className="mt-8">
+              <h2 className="font-display font-semibold text-base mb-1">Workers offering their own price</h2>
+              <p className="text-sm text-ink-500 mb-4">
+                Book a specific worker directly - they're notified immediately and no one else can take this job.
+              </p>
+              <div className="grid sm:grid-cols-2 gap-4">
+                {workers.map((w) =>
+                  (w.servicePricing || []).map((entry) => (
+                    <div
+                      key={`${w._id}-${entry.name}`}
+                      className="bg-white border border-cloud-200 rounded-card p-5 hover:shadow-soft hover:-translate-y-0.5 transition-all duration-300"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-display font-semibold text-base">{entry.name}</p>
+                          <p className="text-sm text-ink-500 mt-1">
+                            by {w.name}
+                            {w.rating?.count > 0 && ` · ★ ${w.rating.average.toFixed(1)} (${w.rating.count})`}
+                            {w.experienceYears > 0 && ` · ${w.experienceYears}y experience`}
+                          </p>
+                        </div>
+                        {w.availability !== 'available' && (
+                          <span className="shrink-0 text-xs font-bold bg-amber-50 text-amber-600 px-2 py-1 rounded-pill">
+                            Busy
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-4">
+                        <span className="font-display font-bold text-xl text-brand-600">₹{entry.price}</span>
+                        <Button size="sm" onClick={() => openWorkerBooking(w, entry)} disabled={w.availability !== 'available'}>
+                          Book {w.name.split(' ')[0]}
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -191,7 +285,10 @@ export default function CategoryServices() {
             <Input
               label="Pincode"
               value={form.pincode}
-              onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="6-digit pincode"
             />
           </div>
           <Input
